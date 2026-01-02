@@ -1,0 +1,651 @@
+'use client';
+
+import ConfiguratorPreview from '@/components/ConfiguratorPreview';
+import { calculatePrice } from '@/lib/pricing';
+import { designTemplates, getTemplatesByType } from '@/lib/templates';
+import { generateDesignWhatsAppLink } from '@/lib/whatsapp';
+import { ConfiguredStone, DesignConfiguration, MetalType, ProductType, RopeColor, StoneType } from '@/types';
+import Link from 'next/link';
+import { useState } from 'react';
+
+const steps = ['Type', 'Template', 'Metal', 'Rope', 'Stones', 'Engraving', 'Size', 'Summary'];
+
+export default function DesignPage() {
+    const [currentStep, setCurrentStep] = useState(0);
+    const [selectedType, setSelectedType] = useState<ProductType | null>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+    const [metal, setMetal] = useState<MetalType>('18K Yellow Gold');
+    const [ropeColor, setRopeColor] = useState<RopeColor>('Black');
+    const [configuredStones, setConfiguredStones] = useState<ConfiguredStone[]>([]);
+    const [engraving, setEngraving] = useState('');
+    const [size, setSize] = useState('');
+
+    const template = selectedTemplate ? designTemplates.find(t => t.id === selectedTemplate) : null;
+    const availableTemplates = selectedType ? getTemplatesByType(selectedType) : [];
+
+    const pricing = template ? calculatePrice(
+        template.baseGoldWeight,
+        metal,
+        configuredStones.map(cs => ({
+            type: cs.type,
+            caratWeight: cs.caratWeight,
+        })),
+        template.complexity
+    ) : null;
+
+    const canProceed = () => {
+        if (currentStep === 0) return selectedType !== null;
+        if (currentStep === 1) return selectedTemplate !== null;
+        if (currentStep === 2) return true; // Metal always selected
+        if (currentStep === 3) return !template?.ropeEnabled || ropeColor !== null;
+        if (currentStep === 4) return configuredStones.length > 0;
+        if (currentStep === 5) return true; // Engraving optional
+        if (currentStep === 6) return size !== '';
+        return true;
+    };
+
+    const nextStep = () => {
+        if (canProceed()) {
+            // Skip rope step if not enabled
+            if (currentStep === 2 && !template?.ropeEnabled) {
+                setCurrentStep(4);
+            } else {
+                setCurrentStep(Math.min(currentStep + 1, steps.length - 1));
+            }
+        }
+    };
+
+    const prevStep = () => {
+        // Skip rope step if not enabled when going back
+        if (currentStep === 4 && !template?.ropeEnabled) {
+            setCurrentStep(2);
+        } else {
+            setCurrentStep(Math.max(currentStep - 1, 0));
+        }
+    };
+
+    const saveDesign = () => {
+        const design: DesignConfiguration = {
+            id: `design-${Date.now()}`,
+            createdAt: new Date(),
+            type: selectedType!,
+            template: template!,
+            metal,
+            ropeColor: template?.ropeEnabled ? ropeColor : undefined,
+            stones: configuredStones,
+            engraving: engraving || undefined,
+            size,
+            pricing: pricing!,
+        };
+
+        // Save to localStorage
+        const savedDesigns = JSON.parse(localStorage.getItem('vvvluxe-designs') || '[]');
+        savedDesigns.push(design);
+        localStorage.setItem('vvvluxe-designs', JSON.stringify(savedDesigns));
+
+        alert('Design saved! You can send it via WhatsApp or continue editing.');
+    };
+
+    const sendDesignViaWhatsApp = () => {
+        if (!template || !pricing || !selectedType) return;
+        
+        const diamondStone = configuredStones.find(s => s.type === 'Diamond');
+        const gemStone = configuredStones.find(s => s.type !== 'Diamond');
+        
+        const designConfig = {
+            metal,
+            base: template.name,
+            rope: template.ropeEnabled ? ropeColor : undefined,
+            diamond: diamondStone ? `${diamondStone.caratWeight}ct Diamond` : undefined,
+            gemstone: gemStone ? `${gemStone.caratWeight}ct ${gemStone.type}` : undefined,
+            size,
+            engraving: engraving || undefined,
+            estimatedPrice: pricing.total,
+        };
+        
+        const whatsappUrl = generateDesignWhatsAppLink(designConfig);
+        window.open(whatsappUrl, '_blank');
+    };
+
+    return (
+        <div className="bg-luxury-white min-h-screen">
+            {/* Header */}
+            <section className="bg-luxury-black text-luxury-white py-12">
+                <div className="mx-auto max-w-7xl px-6 lg:px-8">
+                    <h1 className="font-serif text-h1 mb-4">Design Your Own Jewelry</h1>
+                    <p className="text-lg text-luxury-warm-gray-300">
+                        Create your unique piece step by step. See pricing in real-time.
+                    </p>
+                </div>
+            </section>
+
+            {/* Progress Steps */}
+            <div className="bg-luxury-warm-gray-100 border-b border-luxury-warm-gray-200">
+                <div className="mx-auto max-w-7xl px-6 lg:px-8 py-6">
+                    <div className="flex items-center justify-between">
+                        {steps.map((step, idx) => (
+                            <div key={step} className="flex items-center">
+                                <div className={`flex items-center ${idx <= currentStep ? 'text-luxury-black' : 'text-luxury-warm-gray-400'}`}>
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${idx === currentStep ? 'bg-luxury-gold text-luxury-black' :
+                                            idx < currentStep ? 'bg-luxury-black text-luxury-white' :
+                                                'bg-luxury-warm-gray-300 text-luxury-warm-gray-600'
+                                        }`}>
+                                        {idx + 1}
+                                    </div>
+                                    <span className="ml-2 text-sm font-medium hidden md:inline">{step}</span>
+                                </div>
+                                {idx < steps.length - 1 && (
+                                    <div className={`w-12 h-0.5 mx-2 ${idx < currentStep ? 'bg-luxury-black' : 'bg-luxury-warm-gray-300'}`} />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="mx-auto max-w-7xl px-6 lg:px-8 py-12">
+                <div className="lg:grid lg:grid-cols-3 lg:gap-12">
+                    {/* Configuration Steps */}
+                    <div className="lg:col-span-2 mb-12 lg:mb-0">
+                        {/* Step 0: Choose Type */}
+                        {currentStep === 0 && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Choose Jewelry Type</h2>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    {(['Bracelet', 'Necklace', 'Ring', 'Earrings'] as ProductType[]).map((type) => (
+                                        <button
+                                            key={type}
+                                            onClick={() => {
+                                                setSelectedType(type);
+                                                setSelectedTemplate(null);
+                                                setConfiguredStones([]);
+                                            }}
+                                            className={`p-6 border-2 text-center transition-all ${selectedType === type
+                                                    ? 'border-luxury-black bg-luxury-warm-gray-50'
+                                                    : 'border-luxury-warm-gray-200 hover:border-luxury-warm-gray-400'
+                                                }`}
+                                        >
+                                            <div className="font-serif text-xl mb-2">{type}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 1: Choose Template */}
+                        {currentStep === 1 && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Choose Design Template</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {availableTemplates.map((tmpl) => (
+                                        <button
+                                            key={tmpl.id}
+                                            onClick={() => {
+                                                setSelectedTemplate(tmpl.id);
+                                                setConfiguredStones([]);
+                                            }}
+                                            className={`p-6 border-2 text-left transition-all ${selectedTemplate === tmpl.id
+                                                    ? 'border-luxury-black bg-luxury-warm-gray-50'
+                                                    : 'border-luxury-warm-gray-200 hover:border-luxury-warm-gray-400'
+                                                }`}
+                                        >
+                                            <h3 className="font-serif text-xl mb-2">{tmpl.name}</h3>
+                                            <p className="text-sm text-luxury-warm-gray-600 mb-3">{tmpl.description}</p>
+                                            <div className="flex gap-2 text-xs">
+                                                <span className="px-2 py-1 bg-luxury-warm-gray-200">
+                                                    {tmpl.complexity}
+                                                </span>
+                                                {tmpl.ropeEnabled && (
+                                                    <span className="px-2 py-1 bg-luxury-gold">Rope Design</span>
+                                                )}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 2: Choose Metal */}
+                        {currentStep === 2 && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Choose Metal Color</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {(['18K White Gold', '18K Yellow Gold', '18K Rose Gold'] as MetalType[]).map((metalType) => (
+                                        <button
+                                            key={metalType}
+                                            onClick={() => setMetal(metalType)}
+                                            className={`p-6 border-2 text-center transition-all ${metal === metalType
+                                                    ? 'border-luxury-black bg-luxury-warm-gray-50'
+                                                    : 'border-luxury-warm-gray-200 hover:border-luxury-warm-gray-400'
+                                                }`}
+                                        >
+                                            <div className="font-medium mb-2">{metalType}</div>
+                                            <div className="text-sm text-luxury-warm-gray-600">
+                                                {metalType.includes('White') ? 'Classic elegance' :
+                                                    metalType.includes('Yellow') ? 'Traditional warmth' :
+                                                        'Romantic blush'}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 3: Choose Rope Color (if enabled) */}
+                        {currentStep === 3 && template?.ropeEnabled && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Choose Rope Color</h2>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    {(['Black', 'Navy', 'Burgundy', 'White', 'Gold'] as RopeColor[]).map((color) => {
+                                        const colorMap: Record<string, string> = {
+                                            Black: '#1a1a1a',
+                                            Navy: '#001f3f',
+                                            Burgundy: '#800020',
+                                            White: '#f8f8f8',
+                                            Gold: '#d4af37',
+                                        };
+                                        return (
+                                            <button
+                                                key={color}
+                                                onClick={() => setRopeColor(color)}
+                                                className={`p-6 border-2 text-center transition-all ${ropeColor === color
+                                                        ? 'border-luxury-black bg-luxury-warm-gray-50'
+                                                        : 'border-luxury-warm-gray-200 hover:border-luxury-warm-gray-400'
+                                                    }`}
+                                            >
+                                                <div 
+                                                    className="w-12 h-12 rounded-full mx-auto mb-3 border border-luxury-warm-gray-300"
+                                                    style={{ backgroundColor: colorMap[color] }}
+                                                />
+                                                <div className="font-medium">{color}</div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 4: Add Stones */}
+                        {currentStep === 4 && template && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Add Stones</h2>
+                                <p className="text-luxury-warm-gray-600 mb-6">
+                                    This template has {template.stoneSlots.length} stone {template.stoneSlots.length === 1 ? 'slot' : 'slots'}.
+                                </p>
+                                {template.stoneSlots.map((slot, idx) => {
+                                    const configured = configuredStones.find(cs => cs.slotId === slot.id);
+                                    return (
+                                        <div key={slot.id} className="mb-8 p-6 border border-luxury-warm-gray-200">
+                                            <h3 className="font-medium mb-4">Slot: {slot.position}</h3>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium mb-2">Stone Type</label>
+                                                    <select
+                                                        value={configured?.type || ''}
+                                                        onChange={(e) => {
+                                                            const newStones = configuredStones.filter(cs => cs.slotId !== slot.id);
+                                                            if (e.target.value) {
+                                                                newStones.push({
+                                                                    slotId: slot.id,
+                                                                    type: e.target.value as StoneType,
+                                                                    shape: slot.allowedShapes[0],
+                                                                    caratWeight: slot.minCarat,
+                                                                    gemstoneType: e.target.value === 'Gemstone' ? 'Sapphire' : undefined,
+                                                                });
+                                                            }
+                                                            setConfiguredStones(newStones);
+                                                        }}
+                                                        className="input-luxury text-sm"
+                                                    >
+                                                        <option value="">Select...</option>
+                                                        <option value="CVD Diamond">CVD Diamond</option>
+                                                        <option value="Natural Diamond">Natural Diamond</option>
+                                                        <option value="Gemstone">Gemstone</option>
+                                                    </select>
+                                                </div>
+
+                                                {configured && configured.type === 'Gemstone' && (
+                                                    <div>
+                                                        <label className="block text-sm font-medium mb-2">Gemstone Type</label>
+                                                        <select
+                                                            value={configured.gemstoneType || 'Sapphire'}
+                                                            onChange={(e) => {
+                                                                const newStones = configuredStones.map(cs =>
+                                                                    cs.slotId === slot.id ? { ...cs, gemstoneType: e.target.value } : cs
+                                                                );
+                                                                setConfiguredStones(newStones);
+                                                            }}
+                                                            className="input-luxury text-sm"
+                                                        >
+                                                            <option value="Sapphire">Blue Sapphire</option>
+                                                            <option value="Pink Sapphire">Pink Sapphire</option>
+                                                            <option value="Ruby">Ruby</option>
+                                                            <option value="Emerald">Emerald</option>
+                                                            <option value="Aquamarine">Aquamarine</option>
+                                                            <option value="Morganite">Morganite</option>
+                                                            <option value="Tanzanite">Tanzanite</option>
+                                                            <option value="Amethyst">Amethyst</option>
+                                                            <option value="Citrine">Citrine</option>
+                                                            <option value="Peridot">Peridot</option>
+                                                            <option value="Topaz">Imperial Topaz</option>
+                                                            <option value="Tourmaline">Paraiba Tourmaline</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {configured && (
+                                                    <>
+                                                        <div>
+                                                            <label className="block text-sm font-medium mb-2">Shape</label>
+                                                            <select
+                                                                value={configured.shape}
+                                                                onChange={(e) => {
+                                                                    const newStones = configuredStones.map(cs =>
+                                                                        cs.slotId === slot.id ? { ...cs, shape: e.target.value } : cs
+                                                                    );
+                                                                    setConfiguredStones(newStones);
+                                                                }}
+                                                                className="input-luxury text-sm"
+                                                            >
+                                                                {slot.allowedShapes.map(shape => (
+                                                                    <option key={shape} value={shape}>{shape}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+
+                                                        <div>
+                                                            <label className="block text-sm font-medium mb-2">
+                                                                Carat ({slot.minCarat} - {slot.maxCarat})
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                min={slot.minCarat}
+                                                                max={slot.maxCarat}
+                                                                step="0.05"
+                                                                value={configured.caratWeight}
+                                                                onChange={(e) => {
+                                                                    const value = parseFloat(e.target.value);
+                                                                    if (value >= slot.minCarat && value <= slot.maxCarat) {
+                                                                        const newStones = configuredStones.map(cs =>
+                                                                            cs.slotId === slot.id ? { ...cs, caratWeight: value } : cs
+                                                                        );
+                                                                        setConfiguredStones(newStones);
+                                                                    }
+                                                                }}
+                                                                className="input-luxury text-sm"
+                                                            />
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Step 5: Engraving */}
+                        {currentStep === 5 && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Add Engraving (Optional)</h2>
+                                <div className="max-w-lg">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Engraving Text (max 30 characters)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        maxLength={30}
+                                        value={engraving}
+                                        onChange={(e) => setEngraving(e.target.value)}
+                                        placeholder="e.g., Forever & Always, A+B, coordinates..."
+                                        className="input-luxury"
+                                    />
+                                    <p className="text-xs text-luxury-warm-gray-500 mt-2">
+                                        {engraving.length}/30 characters
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 6: Size */}
+                        {currentStep === 6 && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Select Size</h2>
+                                <div className="max-w-lg">
+                                    <label className="block text-sm font-medium mb-2">
+                                        {selectedType === 'Ring' ? 'Ring Size' :
+                                            selectedType === 'Bracelet' ? 'Bracelet Length' :
+                                                selectedType === 'Necklace' ? 'Chain Length' :
+                                                    'Size'}
+                                    </label>
+                                    <select
+                                        value={size}
+                                        onChange={(e) => setSize(e.target.value)}
+                                        className="input-luxury"
+                                    >
+                                        <option value="">Select size...</option>
+                                        {selectedType === 'Ring' && (
+                                            <>
+                                                <option value="US 5">US 5</option>
+                                                <option value="US 6">US 6</option>
+                                                <option value="US 7">US 7</option>
+                                                <option value="US 8">US 8</option>
+                                                <option value="US 9">US 9</option>
+                                                <option value="US 10">US 10</option>
+                                                <option value="US 11">US 11</option>
+                                            </>
+                                        )}
+                                        {(selectedType === 'Bracelet' || selectedType === 'Necklace') && (
+                                            <>
+                                                <option value="16cm">16cm</option>
+                                                <option value="17cm">17cm</option>
+                                                <option value="18cm">18cm</option>
+                                                <option value="19cm">19cm</option>
+                                                <option value="20cm">20cm</option>
+                                                {selectedType === 'Necklace' && (
+                                                    <>
+                                                        <option value="40cm">40cm</option>
+                                                        <option value="45cm">45cm</option>
+                                                        <option value="50cm">50cm</option>
+                                                    </>
+                                                )}
+                                            </>
+                                        )}
+                                        {selectedType === 'Earrings' && (
+                                            <option value="Standard">Standard</option>
+                                        )}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 7: Summary */}
+                        {currentStep === 7 && template && pricing && (
+                            <div>
+                                <h2 className="font-serif text-h3 mb-6">Design Summary</h2>
+
+                                <div className="border border-luxury-warm-gray-200 divide-y">
+                                    <div className="p-6">
+                                        <h3 className="font-medium mb-4">Configuration</h3>
+                                        <dl className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Type:</dt>
+                                                <dd className="font-medium">{selectedType}</dd>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Template:</dt>
+                                                <dd className="font-medium">{template.name}</dd>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Metal:</dt>
+                                                <dd className="font-medium">{metal}</dd>
+                                            </div>
+                                            {template.ropeEnabled && (
+                                                <div className="flex justify-between">
+                                                    <dt className="text-luxury-warm-gray-600">Rope:</dt>
+                                                    <dd className="font-medium">{ropeColor}</dd>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Stones:</dt>
+                                                <dd className="font-medium">
+                                                    {configuredStones.map(cs => `${cs.caratWeight}ct ${cs.type}`).join(', ')}
+                                                </dd>
+                                            </div>
+                                            {engraving && (
+                                                <div className="flex justify-between">
+                                                    <dt className="text-luxury-warm-gray-600">Engraving:</dt>
+                                                    <dd className="font-medium">"{engraving}"</dd>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Size:</dt>
+                                                <dd className="font-medium">{size}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                        onClick={sendDesignViaWhatsApp} 
+                                        className="btn-gold w-full flex items-center justify-center gap-2"
+                                    >
+                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                                        </svg>
+                                        Send Design via WhatsApp
+                                    </button>
+                                    <button onClick={saveDesign} className="btn-secondary w-full">
+                                        Save Design for Later
+                                    </button  <div className="flex justify-between">
+                                                <dt className="text-luxury-warm-gray-600">Total Price:</dt>
+                                                <dd className="font-serif text-2xl">AED {pricing.total.toLocaleString()}</dd>
+                                            </div>
+                                            <div className="flex justify-between text-xs">
+                                                <dt className="text-luxury-warm-gray-500">Lead Time:</dt>
+                                                <dd>{pricing.leadTimeDays} days</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 space-y-4">
+                                    <button onClick={saveDesign} className="btn-primary w-full">
+                                        Save Design
+                                    </button>
+                                    <Link href={`/contact?type=design-quote`} className="btn-gold w-full text-center block">
+                                        Request Quote for This Design
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Navigation */}
+                        <div className="flex justify-between mt-12 pt-8 border-t">
+                            <button
+                                onClick={prevStep}
+                                disabled={currentStep === 0}
+                                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            {currentStep < steps.length - 1 ? (
+                                <button
+                                    onClick={nextStep}
+                                 button 
+                                    onClick={sendDesignViaWhatsApp}
+                                    className="btn-gold flex items-center gap-2"
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                                    </svg>
+                                    Send via WhatsApp
+                                </button
+                                    Next Step
+                                </button>
+                            ) : (
+                                <Link href="/contact?type=design-quote" className="btn-gold">
+                                    Request Quote
+                                </Link>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Live Preview & Pricing */}
+                    <div className="lg:col-span-1">
+                        <div className="sticky top-24 space-y-6">
+                            {/* Live Preview with Configurator */}
+                            <div className="card-luxury p-6">
+                                <h3 className="font-medium mb-4">Live Preview</h3>
+                                {selectedType && template ? (
+                                    <ConfiguratorPreview
+                                        productType={selectedType}
+                                        metal={metal}
+                                        ropeColor={template.ropeEnabled ? ropeColor : undefined}
+                                        stones={configuredStones}
+                                    />
+                                ) : (
+                                    <div className="aspect-square bg-luxury-warm-gray-100 rounded-lg flex items-center justify-center">
+                                        <div className="text-center text-luxury-warm-gray-500">
+                                            <svg 
+                                                className="mx-auto h-16 w-16 mb-3" 
+                                                fill="none" 
+                                                viewBox="0 0 24 24" 
+                                                stroke="currentColor"
+                                            >
+                                                <path 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round" 
+                                                    strokeWidth={1} 
+                                                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" 
+                                                />
+                                            </svg>
+                                            <p className="text-sm">
+                                                {selectedType ? 'Select a template' : 'Select type to begin'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                                {template && (
+                                    <div className="text-sm text-luxury-warm-gray-600 mt-4 pt-4 border-t">
+                                        <p className="font-medium">{template.name}</p>
+                                        <p className="text-xs mt-1">{metal}</p>
+                                        {ropeColor && template.ropeEnabled && (
+                                            <p className="text-xs">{ropeColor} Rope</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Live Pricing */}
+                            {pricing && (
+                                <div className="card-luxury p-6">
+                                    <h3 className="font-medium mb-4">Estimated Price</h3>
+                                    <div className="text-3xl font-serif mb-4">
+                                        AED {pricing.total.toLocaleString()}
+                                    </div>
+                                    <div className="text-sm text-luxury-warm-gray-600 space-y-1">
+                                        <p>Lead time: {pricing.leadTimeDays} days</p>
+                                        <p className="text-xs mt-2">
+                                            Final price confirmed after consultation
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Help */}
+                            <div className="card-luxury p-6 bg-luxury-warm-gray-50">
+                                <h3 className="font-medium mb-2">Need Help?</h3>
+                                <p className="text-sm text-luxury-warm-gray-600 mb-4">
+                                    Our jewelry experts are here to assist you.
+                                </p>
+                                <Link href="/contact" className="btn-secondary text-sm w-full text-center block">
+                                    Contact Us
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

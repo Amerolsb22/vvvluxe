@@ -1,0 +1,7 @@
+# robots.txt for VVV Luxe
+User-agent: *
+Allow: /
+Disallow: /admin-config
+Disallow: /api/
+
+Sitemap: https://vvvluxe.com/sitemap.xml
